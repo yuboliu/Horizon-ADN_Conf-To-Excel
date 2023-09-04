@@ -22,8 +22,6 @@ characters_to_remove = "^.*"
 list_to_str_separator = "\r\n"
 pattern_replace_port = r'(\bport\b)\s+(\d+)\s+(\w+)'
 replacement_port = r'\1_\2_\3'
-matchedLine = False
-blockConfig = []
 
 
 def iter_configfile(_config_file):
@@ -107,6 +105,76 @@ def dict_to_excel(_dict):
                     sheet.cell(row_index, column_index, value=cell_value)
                 except KeyError:
                     sheet.cell(row_index, column_index, value="N/A")
+
+
+def slbva_dict_to_excel(_dict, _sheet_name):
+    _row_index_sequence = 2
+    _unique_third_level_keys = []
+
+    # 获取一级键
+    _first_level_keys = list(_dict.keys())
+
+    for _first_key in _first_level_keys:
+        _third_level_keys = []
+        # 获取二级键
+        _second_level_keys = list(_dict[_first_key].keys())
+        # print("二级键:", _second_level_keys)
+        # 获取三级键
+        for _second_key in _second_level_keys:
+            try:
+                for _third_key in list(_dict[_first_key][_second_key].keys()):
+                    if _third_key not in _unique_third_level_keys:
+                        _unique_third_level_keys.append(_third_key)
+            except AttributeError:
+                pass
+        if "other" in _second_level_keys and "other" not in _unique_third_level_keys:
+            _unique_third_level_keys.append("other")
+
+    workbook.create_sheet(title=_sheet_name)
+    sheet = workbook[_sheet_name]
+    # 从B3 单元格开始写行
+    for index, _value in enumerate(_unique_third_level_keys, 3):
+        sheet.cell(row=1, column=index, value=_value)
+    # 将数据写入A B列
+    for _first_key in _first_level_keys:
+        _second_level_keys = list(_dict[_first_key].keys())
+        for index, _value in enumerate(_second_level_keys, _row_index_sequence):
+            if _value != "other":
+                sheet.cell(row=index, column=2, value=_value)
+                sheet.cell(row=index, column=1, value=_first_key)
+                _row_index_sequence += 1
+    # 2 = 表头第一行 + range 不包含的上界；列同理
+    _row_index_begin, _column_index_begin = 2, 3
+    _row_index_sequence = 0
+    _column_length = len(_unique_third_level_keys) + 1
+    for _first_key in _first_level_keys:
+        _second_level_keys = list(_dict[_first_key].keys())
+        # -1 是去掉二级键 other
+        _row_length = len(_second_level_keys) - 1
+        for _first_row_index in range(_row_index_begin + _row_index_sequence, _row_length + _row_index_sequence + _row_index_begin):
+            # 行
+            for _column_index in range(_column_index_begin, _column_length + 1):
+                # 列
+                _first_row_index_data = sheet.cell(row=_first_row_index, column=1).value
+                _second_row_index_data = sheet.cell(row=_first_row_index, column=2).value
+                _column_index_data = sheet.cell(row=1, column=_column_index).value
+                # print("##", _first_row_index_data, _second_row_index_data, _column_index_data)
+                try:
+                    _cell_value = _dict[_first_row_index_data][_second_row_index_data][_column_index_data]
+                    if isinstance(_cell_value, str):
+                        if re.match(pattern_hex_unicode, _cell_value):
+                            _cell_value = decode_unicode(_cell_value)
+                    sheet.cell(_first_row_index, _column_index, value=_cell_value)
+                except KeyError:
+                    sheet.cell(_first_row_index, _column_index, value="N/A")
+                if _column_index == _column_length:
+                    _other_value = _dict[_first_row_index_data]["other"]
+                    if len(_other_value) > 1:
+                        _cell_value = "\n".join(_other_value)
+                    else:
+                        _cell_value = "".join(_other_value)
+                    sheet.cell(_first_row_index, _column_index + 1, value=_cell_value)
+        _row_index_sequence += _row_length
 
 
 configFile = open(file_path, 'r')
@@ -274,11 +342,11 @@ while line_content != "Stop":
     line_content = next(configFileIter)
 else:
     if os.path.exists("output.xlsx"):
-        # 如果存在，删除它
         os.remove("output.xlsx")
     workbook = openpyxl.Workbook()
     default_sheet = workbook['Sheet']
     workbook.remove(default_sheet)
     dict_to_excel(outputDict)
+    slbva_dict_to_excel(slbVaDict, "slb_virtual-address")
     workbook.save("output.xlsx")
 
